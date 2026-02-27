@@ -35,7 +35,7 @@ index b8ce55a..2139ed8 100644
  
  module.exports = ApiSpecWatcher;
 diff --git a/packages/bruno-electron/src/app/collection-watcher.js b/packages/bruno-electron/src/app/collection-watcher.js
-index 038ba01..863bfb4 100644
+index 5f4c5fd..7b78ae1 100644
 --- a/packages/bruno-electron/src/app/collection-watcher.js
 +++ b/packages/bruno-electron/src/app/collection-watcher.js
 @@ -932,6 +932,20 @@ class CollectionWatcher {

@@ -2,13 +2,13 @@
 set -euo pipefail
 
 #=============================================================================
-# Bruno v3.1.1 + Userscript feature build script
+# Bruno v3.1.4 + Userscript feature build script
 #=============================================================================
 
 # --- Configuration ---
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BRUNO_REPO="https://github.com/usebruno/bruno.git"
-BRUNO_TAG="v3.1.1"
+BRUNO_TAG="v3.1.4"
 PATCH_FILE="$SCRIPT_DIR/bruno-userscript-feature.patch"
 BUILD_DIR="$SCRIPT_DIR/bruno-userscript-build"
 USERSCRIPTS_APP_SUPPORT_DIR="$HOME/Library/Application Support/bruno/userscripts"

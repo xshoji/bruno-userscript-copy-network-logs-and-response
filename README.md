@@ -18,7 +18,7 @@ This userscript adds a "Copy" button to Bruno that copies network logs and respo
 
 ### Option A: Build Bruno with userscript support
 
-Build a customized Bruno (v3.1.1) that automatically loads userscripts on startup.
+Build a customized Bruno (v3.1.4) that automatically loads userscripts on startup.
 
 #### Prerequisites
 
@@ -33,7 +33,7 @@ Build a customized Bruno (v3.1.1) that automatically loads userscripts on startu
 
 This script will:
 
-1. Clone Bruno v3.1.1
+1. Clone Bruno v3.1.4
 2. Apply `bruno-userscript-feature.patch` to add userscript support
 3. Copy `src.js` to the userscripts directory (`~/Library/Application Support/bruno/userscripts/`)
 4. Build the Electron app

@@ -49,6 +49,7 @@ The target Bruno version is determined by `BRUNO_TAG` in `build-bruno-with-users
 |----------|---------------|
 | `build-bruno-with-userscripts.sh` `BRUNO_TAG` | Change to the new tag (e.g., `v3.2.0`) |
 | `build-bruno-with-userscripts.sh` header comment | Update the version in the comment (e.g., `Bruno v3.2.0 + Userscript feature build script`) |
+| `README.md` | Update all version references (e.g., `v3.1.4` → `v3.2.0`) |
 
 ## Workflow
 
@@ -95,6 +96,9 @@ If `git apply --check` exits with 0, the patch is valid.
 Update `build-bruno-with-userscripts.sh`:
 - `BRUNO_TAG` → new tag
 - Header comment → new version
+
+Update `README.md`:
+- All Bruno version references (e.g., "Build a customized Bruno (v3.x.x)", "Clone Bruno v3.x.x")
 
 ## Troubleshooting
 
