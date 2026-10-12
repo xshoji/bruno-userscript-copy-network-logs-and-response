@@ -9,142 +9,46 @@ index 9faefe7..8567989 100644
 +
 +# Userscripts directory (local customizations)
 +userscripts/
-diff --git a/packages/bruno-electron/src/app/apiSpecsWatcher.js b/packages/bruno-electron/src/app/apiSpecsWatcher.js
-index b8ce55a..2139ed8 100644
---- a/packages/bruno-electron/src/app/apiSpecsWatcher.js
-+++ b/packages/bruno-electron/src/app/apiSpecsWatcher.js
-@@ -141,6 +141,20 @@ class ApiSpecWatcher {
-       delete this.watcherWorkspaces[watchPath];
-     }
-   }
-+
-+  closeAll() {
-+    Object.entries(this.watchers).forEach(([watchPath, watcher]) => {
-+      if (watcher) {
-+        try {
-+          watcher.close();
-+        } catch (error) {
-+          console.error(`Error closing apiSpec watcher for ${watchPath}:`, error);
-+        }
-+      }
-+    });
-+    this.watchers = {};
-+    this.watcherWorkspaces = {};
-+  }
- }
- 
- module.exports = ApiSpecWatcher;
-diff --git a/packages/bruno-electron/src/app/collection-watcher.js b/packages/bruno-electron/src/app/collection-watcher.js
-index 5f4c5fd..7b78ae1 100644
---- a/packages/bruno-electron/src/app/collection-watcher.js
-+++ b/packages/bruno-electron/src/app/collection-watcher.js
-@@ -932,6 +932,20 @@ class CollectionWatcher {
-       .filter(([path, watcher]) => !!watcher)
-       .map(([path, _watcher]) => path);
-   }
-+
-+  closeAll() {
-+    Object.entries(this.watchers).forEach(([watchPath, watcher]) => {
-+      if (watcher) {
-+        try {
-+          watcher.close();
-+        } catch (error) {
-+          console.error(`Error closing collection watcher for ${watchPath}:`, error);
-+        }
-+      }
-+    });
-+    this.watchers = {};
-+    this.loadingStates = {};
-+  }
- }
- 
- const collectionWatcher = new CollectionWatcher();
-diff --git a/packages/bruno-electron/src/app/workspace-watcher.js b/packages/bruno-electron/src/app/workspace-watcher.js
-index 1cc38c8..7eab927 100644
---- a/packages/bruno-electron/src/app/workspace-watcher.js
-+++ b/packages/bruno-electron/src/app/workspace-watcher.js
-@@ -224,6 +224,29 @@ class WorkspaceWatcher {
-   hasWatcher(workspacePath) {
-     return Boolean(this.watchers[workspacePath]);
-   }
-+
-+  closeAll() {
-+    Object.entries(this.watchers).forEach(([workspacePath, watcher]) => {
-+      if (watcher) {
-+        try {
-+          watcher.close();
-+        } catch (error) {
-+          console.error(`Error closing workspace watcher for ${workspacePath}:`, error);
-+        }
-+      }
-+    });
-+    Object.entries(this.environmentWatchers).forEach(([workspacePath, watcher]) => {
-+      if (watcher) {
-+        try {
-+          watcher.close();
-+        } catch (error) {
-+          console.error(`Error closing environment watcher for ${workspacePath}:`, error);
-+        }
-+      }
-+    });
-+    this.watchers = {};
-+    this.environmentWatchers = {};
-+  }
- }
- 
- module.exports = WorkspaceWatcher;
 diff --git a/packages/bruno-electron/src/index.js b/packages/bruno-electron/src/index.js
-index 6cc1979..ddcbe0f 100644
+index ffd7339..3e59036 100644
 --- a/packages/bruno-electron/src/index.js
 +++ b/packages/bruno-electron/src/index.js
-@@ -56,6 +56,8 @@ const onboardUser = require('./app/onboarding');
+@@ -66,6 +66,7 @@ const { cookiesStore } = require('./store/cookies');
  const SystemMonitor = require('./app/system-monitor');
  const { getIsRunningInRosetta } = require('./utils/arch');
  const { handleAppProtocolUrl, getAppProtocolUrlFromArgv } = require('./utils/deeplink');
 +const { createUserscriptsDirectory, getUserscripts, loadScript } = require('./utils/userscripts');
-+const dotEnvWatcher = require('./app/dotenv-watcher');
  
- const lastOpenedCollections = new LastOpenedCollections();
  const systemMonitor = new SystemMonitor();
-@@ -391,6 +393,45 @@ app.on('ready', async () => {
+ const terminalManager = new TerminalManager();
+@@ -507,6 +508,34 @@ app.on('ready', async () => {
      mainWindow.webContents.send('main:app-loaded', {
        isRunningInRosetta: getIsRunningInRosetta()
      });
 +
-+    // Load and execute userscripts
++    // Load userscripts in the renderer and retain their cleanup functions.
 +    try {
 +      await createUserscriptsDirectory();
 +      const scripts = await getUserscripts();
 +
 +      for (const script of scripts) {
-+        const content = await loadScript(script.path);
-+        if (!content) continue;
-+
 +        try {
-+          const wrappedScript = `
++          const content = await loadScript(script.path);
++          if (!content) continue;
++
++          await mainWindow.webContents.executeJavaScript(`
 +            (function() {
-+              if (!window.__userscriptCleanup) {
-+                window.__userscriptCleanup = [];
-+              }
-+              try {
-+                const dispose = ${content};
-+                if (typeof dispose === 'function') {
-+                  window.__userscriptCleanup.push(dispose);
-+                }
-+              } catch (e) {
-+                console.error('Userscript error:', e);
++              window.__userscriptCleanup = window.__userscriptCleanup || [];
++              const dispose = ${content};
++              if (typeof dispose === 'function') {
++                window.__userscriptCleanup.push(dispose);
 +              }
 +            })();
-+          `;
-+          await mainWindow.webContents.executeJavaScript(wrappedScript);
++          `);
 +          console.log(`Userscript loaded: ${script.name}`);
 +        } catch (err) {
 +          console.error(`Failed to load userscript: ${script.name}`, err);
 +        }
-+      }
-+
-+      if (scripts.length > 0) {
-+        console.log(`Loaded ${scripts.length} userscript(s)`);
 +      }
 +    } catch (err) {
 +      console.error('Userscript initialization failed:', err);
@@ -152,57 +56,28 @@ index 6cc1979..ddcbe0f 100644
    });
  
    // register all ipc handlers
-@@ -407,6 +448,18 @@ app.on('ready', async () => {
- 
- // Quit the app once all windows are closed
- app.on('before-quit', () => {
-+  // Cleanup userscripts
-+  if (mainWindow && !mainWindow.isDestroyed()) {
-+    mainWindow.webContents.executeJavaScript(`
-+      if (window.__userscriptCleanup) {
-+        window.__userscriptCleanup.forEach(fn => {
-+          try { fn(); } catch (e) { console.error('Userscript cleanup error:', e); }
-+        });
-+        window.__userscriptCleanup = [];
-+      }
-+    `).catch(() => {});
-+  }
-+
-   // Release single instance lock to allow other instances to take over
-   if (useSingleInstance && gotTheLock) {
-     app.releaseSingleInstanceLock();
-@@ -426,6 +479,31 @@ app.on('before-quit', () => {
-   } catch (err) {
-     console.error('Failed to kill all terminals on quit', err);
-   }
-+
-+  // Close all file watchers to prevent native module cleanup issues
-+  try {
-+    collectionWatcher.closeAll();
-+  } catch (err) {
-+    console.error('Failed to close collection watchers on quit', err);
-+  }
-+
-+  try {
-+    workspaceWatcher.closeAll();
-+  } catch (err) {
-+    console.error('Failed to close workspace watchers on quit', err);
-+  }
-+
-+  try {
-+    apiSpecWatcher.closeAll();
-+  } catch (err) {
-+    console.error('Failed to close apiSpec watchers on quit', err);
-+  }
-+
-+  try {
-+    dotEnvWatcher.closeAll();
-+  } catch (err) {
-+    console.error('Failed to close dotEnv watchers on quit', err);
-+  }
- });
- 
- app.on('window-all-closed', app.quit);
+@@ -550,7 +579,20 @@ app.on('before-quit', (event) => {
+   (async () => {
+     try {
+       await Promise.race([
+-        closeAllWatchers(),
++        Promise.allSettled([
++          closeAllWatchers(),
++          mainWindow && !mainWindow.isDestroyed() && !mainWindow.webContents.isDestroyed()
++            ? mainWindow.webContents.executeJavaScript(`
++                (async function() {
++                  const cleanups = window.__userscriptCleanup || [];
++                  window.__userscriptCleanup = [];
++                  for (const dispose of cleanups) {
++                    try { await dispose(); } catch (err) { console.error('Userscript cleanup error:', err); }
++                  }
++                })();
++              `)
++            : Promise.resolve()
++        ]),
+         // Cap the wait so a stuck watcher can't block exit indefinitely.
+         new Promise((resolve) => setTimeout(resolve, 2000))
+       ]);
 diff --git a/packages/bruno-electron/src/utils/userscripts.js b/packages/bruno-electron/src/utils/userscripts.js
 new file mode 100644
 index 0000000..13c0758

@@ -94,8 +94,8 @@
     },
 
     getActiveTimelineItem: () => {
-      const items = document.querySelectorAll(".timeline-container .timeline-event .timeline-item");
-      const expanded = Array.from(items).find(item => item.querySelector(".timeline-item-content"));
+      const items = document.querySelectorAll(".timeline-container .timeline-event .tl-row-wrap");
+      const expanded = Array.from(items).find(item => item.querySelector(".tl-detail"));
       return expanded || null;
     },
 
@@ -103,33 +103,19 @@
       const already = DomOperations.getActiveTimelineItem();
       if (already) return already;
 
-      const header = document.querySelector(".timeline-container .timeline-event .oauth-request-item-header");
+      const header = document.querySelector(".timeline-container .timeline-event .tl-row");
       if (header) {
         header.click();
         await Utils.wait(300);
-        return header.closest(".timeline-item") || null;
+        return header.closest(".tl-row-wrap") || null;
       }
       return null;
     },
 
-    findNetworkLogsLabel: (scope) => {
-      const root = scope || document;
-      if (root.evaluate) {
-        return document.evaluate('.//*[not(contains(name(), "script")) and text() = "Network Logs"]', root, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null).snapshotItem(0);
-      }
-      return Array.from(root.querySelectorAll("*")).find(el => el.childNodes.length === 1 && el.textContent === "Network Logs");
-    },
-
-    clickNetworkLogs: async (scope) => {
-      const el = DomOperations.findNetworkLogsLabel(scope);
+    clickItemTab: async (scope, tab) => {
+      const el = scope.querySelector(`[data-testid="tl-tab-${tab}"]`);
       if (el) { el.click(); await Utils.wait(100); }
       return !!el;
-    },
-
-    clickNetworkLogsPreviousElement: async (scope) => {
-      const el = DomOperations.findNetworkLogsLabel(scope);
-      if (el?.previousSibling) { el.previousSibling.click(); await Utils.wait(100); }
-      return !!(el?.previousSibling);
     },
 
     insertElementAtPosition: (element, referenceText) => {
@@ -169,16 +155,9 @@
         .trim();
     },
 
-    copyToClipboard: result => {
-      return new Promise((resolve, reject) => {
-        try {
-          navigator.clipboard.writeText(Utils.maskSensitiveInfo(result.value));
-          resolve(result);
-        } catch (e) {
-          console.error("Failed to copy to clipboard:", e);
-          reject(e);
-        }
-      });
+    copyToClipboard: async result => {
+      await navigator.clipboard.writeText(Utils.maskSensitiveInfo(result.value));
+      return result;
     },
   };
 
@@ -245,23 +224,45 @@
         const result = { value: "" };
 
         // Ensure Timeline tab is active and get the active (or first) timeline item
-        await DomOperations.clickTimelineTab();
+        if (!await DomOperations.clickTimelineTab()) throw new Error("Timeline tab not found");
         const activeItem = await DomOperations.expandFirstTimelineItem();
-        const scope = activeItem?.querySelector(".timeline-item-content") || document;
+        const scope = activeItem?.querySelector(".tl-detail");
+        if (!scope) throw new Error("No Timeline request found");
 
-        // Click Network Logs and get its content
-        await DomOperations.clickNetworkLogs(scope);
-        await Utils.wait(100);
-        const networkLogs = await DataProcessor.getNetworkLogs(scope);
+        // Network and Response panels are mounted on their first visit.
+        const networkLogs = await DomOperations.clickItemTab(scope, "network")
+          ? await DataProcessor.getNetworkLogs(scope) : "";
 
-        // Click Response and get its content
-        await DomOperations.clickNetworkLogsPreviousElement(scope);
-        await Utils.wait(100);
-        const networkLogsLabel = DomOperations.findNetworkLogsLabel(scope);
-        const responseOutline = Array.from(networkLogsLabel.parentElement.nextElementSibling.children[0].children[0].children).map(e => e.innerText).join(", ")
-        const collapsibleSections = scope.querySelectorAll ? Array.from(scope.querySelectorAll(".collapsible-section")) : Array.from(document.getElementsByClassName("collapsible-section"));
-        const responseSection = collapsibleSections.length > 1 ? collapsibleSections[1] : collapsibleSections[0];
-        const responseBody = responseSection?.querySelector(".CodeMirror")?.CodeMirror?.getValue() || "";
+        if (!await DomOperations.clickItemTab(scope, "response")) throw new Error("Response tab not found");
+        const responsePanel = Array.from(scope.querySelector(".tl-panel").children)
+          .find(panel => panel.style.display !== "none");
+        const responseOutline = Array.from(responsePanel.querySelectorAll(".tl-response-meta > span"))
+          .map(el => el.innerText.trim()).join(", ");
+
+        const bodyToggle = responsePanel.querySelector('[data-testid="response-body-toggle"]');
+        if (bodyToggle?.getAttribute("aria-expanded") === "false") {
+          bodyToggle.click();
+          await Utils.wait(100);
+        }
+        const bodySection = bodyToggle?.closest(".tl-block");
+        if (!bodySection) throw new Error("Response body section not found");
+
+        // Preview mode has no CodeMirror; switch only the response body to its editor.
+        if (!bodySection.querySelector(".CodeMirror")) {
+          const formatButton = bodySection.querySelector('button[data-testid="format-response-tab"]');
+          if (formatButton) {
+            formatButton.click();
+            await Utils.wait(100);
+            document.querySelector('[data-testid="preview-response-tab"][title="Turn off Preview Mode"] input')?.click();
+            await Utils.wait(100);
+            formatButton.click();
+          }
+        }
+        const editor = bodySection.querySelector(".CodeMirror")?.CodeMirror;
+        if (!editor && !bodySection.querySelector(".tl-empty")) {
+          throw new Error("Response body is not available. Open it in editor mode and retry.");
+        }
+        const responseBody = editor?.getValue() || "";
 
         result.value += responseOutline + ", " + networkLogs + "\n\n" + responseBody + "\n";
         result.value = result.value.replace(/\n{3,}/g, '\n\n');
